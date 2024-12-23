@@ -73,8 +73,10 @@ Options:
 
 Run the test suite:
 ```bash
-python3 -m unittest test_krack_attack.py
+python3 -m pytest test_krack_attack.py -v
 ```
+all tests passing
+![image](https://github.com/user-attachments/assets/e65b73f7-c62d-4bbf-b219-36ff16811e25)
 
 ## Disclaimer
 
