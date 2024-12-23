@@ -29,7 +29,7 @@ An implementation of the Key Reinstallation Attack (KRACK) against WPA2 as descr
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/krack-attack.git
+git clone https://github.com/slapglif/KrakPoC
 cd krack-attack
 ```
 
