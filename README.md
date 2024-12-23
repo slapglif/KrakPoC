@@ -1,123 +1,98 @@
-# KRACK Attack Tool
+# KRACK Attack Tool 🔓
 
-![ezgif-1-4a9174721e](https://github.com/user-attachments/assets/bce56522-7a00-49be-926d-a4c9fb6cb3f1)
+A Python-based tool for testing networks against Key Reinstallation Attacks (KRACK).
 
-An implementation of the Key Reinstallation Attack (KRACK) against WPA2 as described in the paper "Key Reinstallation Attacks: Forcing Nonce Reuse in WPA2" by Mathy Vanhoef and Frank Piessens.
+## 📁 Project Structure
 
-## Features
-
-- Implementation of all major KRACK attack variants:
-  - 4-way handshake attack (plaintext and encrypted retransmission)
-  - Group key handshake attack (immediate and delayed installation)
-  - Fast BSS Transition (FT) handshake attack
-- Automatic attack mode:
-  - Continuously scans for vulnerable networks
-  - Prioritizes targets by signal strength
-  - Automatic client detection
-  - Tries all attack variants
-  - Detailed success tracking and reporting
-- User-friendly CLI interface with:
-  - Network scanning and target selection
-  - MAC address validation
-  - Progress indicators and colored output
-  - Detailed error reporting
-- Cross-platform support (Linux and macOS)
-- Comprehensive test suite
-
-## Requirements
-
-- Python 3.7+
-- Root/sudo privileges (for network interface access)
-- Linux or macOS operating system
-- Wireless network interface that supports monitor mode
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/slapglif/KrakPoC
-cd krack-attack
+```
+krack_attack/
+├── __init__.py              # Package initialization
+├── krack_attacks.py         # Core attack implementations
+├── krack_auto.py           # Automated attack functionality
+├── krack_cli.py            # Command-line interface
+├── krack_core.py           # Core utilities and logging
+├── krack_network.py        # Network scanning and client detection
+└── tests/                  # Test suite
+    ├── __init__.py
+    ├── test_attacks.py     # Attack function tests
+    ├── test_auto.py       # Auto attack tests
+    └── test_network.py    # Network utility tests
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+## ✨ Features
+
+### Auto Attack Mode 🤖
+
+The new auto attack mode automatically:
+- Continuously scans for networks in range
+- Prioritizes networks by signal strength
+- Detects active clients on each network
+- Attempts all supported attacks on vulnerable clients
+- Tracks successful attacks and their results
+
+### Attack Flow Diagram
+
+```mermaid
+graph TD
+    A[Start Auto Attack] --> B{Scan Networks}
+    B --> C[Sort by Signal Strength]
+    C --> D{For Each Network}
+    D --> E[Detect Clients]
+    E --> F{For Each Client}
+    F --> G[4-Way Handshake Attack]
+    F --> H[Group Key Attack]
+    F --> I[Fast BSS Attack]
+    G --> J{Success?}
+    H --> J
+    I --> J
+    J -->|Yes| K[Record Result]
+    J -->|No| F
+    D --> L[Sleep Interval]
+    L --> B
 ```
 
-3. Make sure your wireless interface supports monitor mode:
-```bash
-sudo airmon-ng
-```
+## 🎯 Attack Feature Matrix
 
-## Usage
+| Attack Type | Description | Auto Mode | Manual Mode | Success Rate |
+|------------|-------------|:---------:|:-----------:|:------------:|
+| 4-Way Handshake (Plaintext) | Reinstalls PTK with plaintext retransmission | ✅ | ✅ | High |
+| 4-Way Handshake (Encrypted) | Reinstalls PTK with encrypted retransmission | ✅ | ✅ | Medium |
+| Group Key (Immediate) | Immediate GTK reinstallation | ✅ | ✅ | High |
+| Group Key (Delayed) | Delayed GTK reinstallation | ✅ | ✅ | Medium |
+| Fast BSS Transition | FT Handshake exploitation | ✅ | ✅ | Medium |
 
-Basic usage:
-```bash
-sudo python3 krack_cli.py
-```
-
-With specific options:
-```bash
-sudo python3 krack_cli.py --interface wlan0 --ap-mac 00:11:22:33:44:55 --client-mac aa:bb:cc:dd:ee:ff
-```
-
-Auto attack mode:
-```bash
-sudo python3 krack_cli.py --interface wlan0 --min-signal -70 --attack-timeout 300 --scan-interval 60
-```
-
-Options:
-- `-i, --interface`: Network interface to use
-- `--ap-mac`: Target AP MAC address
-- `--client-mac`: Target client MAC address
-- `--scan/--no-scan`: Enable/disable network scanning
-- `--min-signal`: Minimum signal strength for auto attack mode (default: -70 dBm)
-- `--attack-timeout`: Timeout for each attack attempt in auto mode (default: 300 seconds)
-- `--scan-interval`: Interval between network scans in auto mode (default: 60 seconds)
-
-## Attack Types
-
-1. **4-Way Handshake (Plaintext)**: Exploits plaintext retransmissions of message 3
-2. **4-Way Handshake (Encrypted)**: Exploits encrypted retransmissions of message 3
-3. **Group Key (Immediate)**: Attacks APs that install group keys immediately
-4. **Group Key (Delayed)**: Attacks APs that delay group key installation
-5. **Fast BSS Transition**: Attacks the Fast BSS Transition (FT) handshake
-6. **Auto Attack**: Automatically tries all attack types on available networks
+## 🚀 Usage
 
 ### Auto Attack Mode
 
-The auto attack mode continuously scans for networks and attempts to exploit them based on:
-- Signal strength (configurable minimum threshold)
-- Client availability (for attacks that require clients)
-- Network vulnerability to different attack types
-
-Features:
-- Prioritizes networks with stronger signals
-- Automatically detects and targets connected clients
-- Tries all applicable attack types on each target
-- Maintains a record of successful attacks
-- Provides real-time progress updates
-- Generates a comprehensive attack summary
-
-## Testing
-
-Run the test suite:
 ```bash
-python3 -m pytest test_krack_attack.py -v
+krack-attack auto --interface wlan0 --min-signal -70
 ```
-all tests passing
-![image](https://github.com/user-attachments/assets/e65b73f7-c62d-4bbf-b219-36ff16811e25)
 
-## Disclaimer
+Options:
+- `--interface`: Network interface to use (must be in monitor mode)
+- `--min-signal`: Minimum signal strength to consider (default: -70 dBm)
+- `--attack-timeout`: Timeout for each attack attempt (default: 60s)
+- `--scan-interval`: Time between network scans (default: 30s)
 
-This tool is for educational and research purposes only. Do not use it against networks you don't own or have explicit permission to test. The authors are not responsible for any misuse or damage caused by this tool.
+### Manual Attack Mode
 
-## References
+```bash
+krack-attack manual --interface wlan0 --bssid XX:XX:XX:XX:XX:XX --client YY:YY:YY:YY:YY:YY
+```
 
-- [Original KRACK Attack Paper](https://papers.mathyvanhoef.com/ccs2017.pdf)
-- [CVE-2017-13077](https://nvd.nist.gov/vuln/detail/CVE-2017-13077)
-- [CVE-2017-13078](https://nvd.nist.gov/vuln/detail/CVE-2017-13078)
+## 🛡️ Defense
 
-## License
+To protect against KRACK attacks:
+- Update all WiFi devices to the latest firmware
+- Use WPA3 when possible
+- Avoid using WPA2 without additional security measures
+- Monitor network for suspicious retransmissions
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+## 📝 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## ⚠️ Disclaimer
+
+This tool is for educational and testing purposes only. Do not use it against networks without explicit permission.
