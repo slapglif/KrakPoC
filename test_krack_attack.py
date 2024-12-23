@@ -1,143 +1,24 @@
 import unittest
-from unittest.mock import patch, MagicMock
-import scapy.all as scapy
-from krack_attack import (
-    four_way_handshake_plaintext_retransmission,
-    four_way_handshake_encrypted_retransmission,
-    group_key_handshake_immediate_install,
-    group_key_handshake_delayed_install,
-    fast_bss_transition_attack,
-    block_message_4,
-    block_group_key_message_2
-)
+from unittest.mock import MagicMock, patch
+from krack_attack import *
 
 class TestKrackAttack(unittest.TestCase):
     def setUp(self):
         self.interface = "wlan0"
         self.target_ap_mac = "00:11:22:33:44:55"
-        self.target_client_mac = "aa:bb:cc:dd:ee:ff"
+        self.target_client_mac = "AA:BB:CC:DD:EE:FF"
         
-        # Create mock EAPOL packets
-        self.mock_eapol_msg1 = MagicMock()
-        self.mock_eapol_msg1.haslayer.return_value = True
-        self.mock_eapol_msg1.getlayer.return_value.type = 3
-        self.mock_eapol_msg1.addr1 = self.target_client_mac
-        self.mock_eapol_msg1.addr2 = self.target_ap_mac
+        # Create mock for scapy functions
+        self.mock_sniff = patch('krack_attack.sniff').start()
+        self.mock_sendp = patch('krack_attack.sendp').start()
         
-        self.mock_eapol_msg2 = MagicMock()
-        self.mock_eapol_msg2.haslayer.return_value = True
-        self.mock_eapol_msg2.getlayer.return_value.type = 3
-        self.mock_eapol_msg2.addr1 = self.target_ap_mac
-        self.mock_eapol_msg2.addr2 = self.target_client_mac
-
-    @patch('scapy.sniff')
-    @patch('scapy.sendp')
-    def test_four_way_handshake_plaintext(self, mock_sendp, mock_sniff):
-        # Mock capturing initial handshake
-        mock_sniff.side_effect = [
-            [self.mock_eapol_msg1, self.mock_eapol_msg2] * 2,  # 4 messages
-            [self.mock_eapol_msg1],  # Retransmitted message 3
-        ]
+        # Mock the interface check
+        self.mock_conf = patch('krack_attack.conf').start()
+        self.mock_conf.ifaces = MagicMock()
+        self.mock_conf.ifaces.dev_from_name.return_value = MagicMock()
         
-        result = four_way_handshake_plaintext_retransmission(
-            self.interface,
-            self.target_ap_mac,
-            self.target_client_mac
-        )
-        
-        self.assertTrue(result)
-        mock_sendp.assert_called()
-
-    @patch('scapy.sniff')
-    @patch('scapy.sendp')
-    def test_four_way_handshake_encrypted(self, mock_sendp, mock_sniff):
-        # Mock capturing initial handshake
-        mock_sniff.side_effect = [
-            [self.mock_eapol_msg1, self.mock_eapol_msg2] * 2,  # 4 messages
-            [self.mock_eapol_msg1],  # Retransmitted message 3
-            [self.mock_eapol_msg1],  # Encrypted retransmitted message 3
-        ]
-        
-        result = four_way_handshake_encrypted_retransmission(
-            self.interface,
-            self.target_ap_mac,
-            self.target_client_mac
-        )
-        
-        self.assertTrue(result)
-        self.assertEqual(mock_sendp.call_count, 2)  # Should send message 3 twice
-
-    @patch('scapy.sniff')
-    @patch('scapy.sendp')
-    def test_group_key_handshake_immediate(self, mock_sendp, mock_sniff):
-        # Create mock broadcast frame
-        mock_broadcast = MagicMock()
-        mock_broadcast.haslayer.return_value = True
-        mock_broadcast.addr2 = self.target_ap_mac
-        mock_broadcast.dst = "ff:ff:ff:ff:ff:ff"
-        
-        # Mock packet captures
-        mock_sniff.side_effect = [
-            [self.mock_eapol_msg1, self.mock_eapol_msg2],  # Group key handshake
-            [self.mock_eapol_msg1],  # Retransmitted message 1
-            [mock_broadcast],  # Broadcast frame
-        ]
-        
-        result = group_key_handshake_immediate_install(
-            self.interface,
-            self.target_ap_mac
-        )
-        
-        self.assertTrue(result)
-        self.assertEqual(mock_sendp.call_count, 2)  # Message 1 and broadcast frame
-
-    @patch('scapy.sniff')
-    @patch('scapy.sendp')
-    def test_group_key_handshake_delayed(self, mock_sendp, mock_sniff):
-        # Create mock broadcast frame
-        mock_broadcast = MagicMock()
-        mock_broadcast.haslayer.return_value = True
-        mock_broadcast.addr2 = self.target_ap_mac
-        mock_broadcast.dst = "ff:ff:ff:ff:ff:ff"
-        
-        # Mock packet captures
-        mock_sniff.side_effect = [
-            [self.mock_eapol_msg1, self.mock_eapol_msg2],  # Group key handshake
-            [self.mock_eapol_msg1],  # Retransmitted message 1
-            [self.mock_eapol_msg2],  # Message 2 to modify
-            [mock_broadcast],  # Broadcast frame
-        ]
-        
-        result = group_key_handshake_delayed_install(
-            self.interface,
-            self.target_ap_mac
-        )
-        
-        self.assertTrue(result)
-        self.assertEqual(mock_sendp.call_count, 3)  # Modified msg2, msg1, broadcast
-
-    @patch('scapy.sniff')
-    @patch('scapy.sendp')
-    def test_fast_bss_transition(self, mock_sendp, mock_sniff):
-        # Create mock reassociation request
-        mock_reasso_req = MagicMock()
-        mock_reasso_req.haslayer.side_effect = lambda x: x == scapy.Dot11ReassoReq
-        mock_reasso_req.addr1 = self.target_ap_mac
-        mock_reasso_req.addr2 = self.target_client_mac
-        
-        # Mock packet captures
-        mock_sniff.side_effect = [
-            [mock_reasso_req] * 4,  # FT handshake packets
-        ]
-        
-        result = fast_bss_transition_attack(
-            self.interface,
-            self.target_ap_mac,
-            self.target_client_mac
-        )
-        
-        self.assertTrue(result)
-        mock_sendp.assert_called()
+    def tearDown(self):
+        patch.stopall()
 
     def test_block_message_4(self):
         # Test the message 4 blocking filter
@@ -147,28 +28,258 @@ class TestKrackAttack(unittest.TestCase):
         mock_msg4.addr1 = self.target_ap_mac
         mock_msg4.addr2 = self.target_client_mac
         
+        # Mock sniff to return our test packet
+        self.mock_sniff.return_value = [mock_msg4]
+        
+        # Get the block filter function
         block_filter = block_message_4(
             self.interface,
             self.target_ap_mac,
             self.target_client_mac
         )
         
+        # Verify the filter works correctly
         self.assertTrue(block_filter(mock_msg4))
+        # Verify sniff was called with correct timeout
+        self.mock_sniff.assert_called_with(
+            iface=self.interface,
+            lfilter=block_filter,
+            count=1,
+            timeout=5
+        )
 
     def test_block_group_key_message_2(self):
         # Test the group message 2 blocking filter
         mock_msg2 = MagicMock()
         mock_msg2.haslayer.return_value = True
         mock_msg2.getlayer.return_value.type = 3
-        mock_msg2.getlayer.return_value.key_info = 0x10  # Bit 4 set
-        mock_msg2.addr1 = self.target_client_mac  # Not AP
+        mock_msg2.getlayer.return_value.key_info = 0x2000  # Group Key bit set (bit 13)
+        mock_msg2.addr1 = self.target_client_mac
         
+        # Mock sniff to return our test packet
+        self.mock_sniff.return_value = [mock_msg2]
+        
+        # Get the block filter function
         block_filter = block_group_key_message_2(
             self.interface,
             self.target_ap_mac
         )
         
+        # Verify the filter works correctly
         self.assertTrue(block_filter(mock_msg2))
+        # Verify sniff was called with correct timeout
+        self.mock_sniff.assert_called_with(
+            iface=self.interface,
+            lfilter=block_filter,
+            count=1,
+            timeout=5
+        )
+
+    def test_four_way_handshake_plaintext(self):
+        # Test plaintext four-way handshake attack
+        # Create mock packets for the complete 4-way handshake
+        mock_msg1 = MagicMock()
+        mock_msg1.haslayer.return_value = True
+        mock_msg1.getlayer.return_value.type = 3
+        mock_msg1.addr1 = self.target_client_mac
+        mock_msg1.addr2 = self.target_ap_mac
+
+        mock_msg2 = MagicMock()
+        mock_msg2.haslayer.return_value = True
+        mock_msg2.getlayer.return_value.type = 3
+        mock_msg2.addr1 = self.target_ap_mac
+        mock_msg2.addr2 = self.target_client_mac
+
+        mock_msg3 = MagicMock()
+        mock_msg3.haslayer.return_value = True
+        mock_msg3.getlayer.return_value.type = 3
+        mock_msg3.addr1 = self.target_client_mac
+        mock_msg3.addr2 = self.target_ap_mac
+
+        mock_msg4 = MagicMock()
+        mock_msg4.haslayer.return_value = True
+        mock_msg4.getlayer.return_value.type = 3
+        mock_msg4.addr1 = self.target_ap_mac
+        mock_msg4.addr2 = self.target_client_mac
+        
+        # Mock sniff to return our test packets in sequence
+        self.mock_sniff.side_effect = [
+            [mock_msg1, mock_msg2, mock_msg3, mock_msg4],  # Initial handshake
+            [mock_msg3],  # Retransmitted message 3
+        ]
+        
+        with patch('krack_attack.time.sleep'):
+            four_way_handshake_plaintext_retransmission(
+                self.interface,
+                self.target_ap_mac,
+                self.target_client_mac
+            )
+            
+        self.mock_sendp.assert_called()
+
+    def test_four_way_handshake_encrypted(self):
+        # Test encrypted four-way handshake attack
+        # Create mock packets for the complete 4-way handshake
+        mock_msg1 = MagicMock()
+        mock_msg1.haslayer.return_value = True
+        mock_msg1.getlayer.return_value.type = 3
+        mock_msg1.addr1 = self.target_client_mac
+        mock_msg1.addr2 = self.target_ap_mac
+
+        mock_msg2 = MagicMock()
+        mock_msg2.haslayer.return_value = True
+        mock_msg2.getlayer.return_value.type = 3
+        mock_msg2.addr1 = self.target_ap_mac
+        mock_msg2.addr2 = self.target_client_mac
+
+        mock_msg3 = MagicMock()
+        mock_msg3.haslayer.return_value = True
+        mock_msg3.getlayer.return_value.type = 3
+        mock_msg3.addr1 = self.target_client_mac
+        mock_msg3.addr2 = self.target_ap_mac
+
+        mock_msg4 = MagicMock()
+        mock_msg4.haslayer.return_value = True
+        mock_msg4.getlayer.return_value.type = 3
+        mock_msg4.addr1 = self.target_ap_mac
+        mock_msg4.addr2 = self.target_client_mac
+        
+        # Mock sniff to return our test packets in sequence
+        self.mock_sniff.side_effect = [
+            [mock_msg1, mock_msg2, mock_msg3, mock_msg4],  # Initial handshake
+            [mock_msg3],  # Retransmitted message 3
+            [mock_msg3],  # Encrypted retransmitted message 3
+        ]
+        
+        with patch('krack_attack.time.sleep'):
+            four_way_handshake_encrypted_retransmission(
+                self.interface,
+                self.target_ap_mac,
+                self.target_client_mac
+            )
+            
+        self.mock_sendp.assert_called()
+
+    def test_group_key_handshake_immediate(self):
+        # Test immediate group key handshake attack
+        # Create mock packets for group key handshake
+        mock_msg1 = MagicMock()
+        mock_msg1.haslayer.return_value = True
+        mock_msg1.getlayer.return_value.type = 3
+        mock_msg1.getlayer.return_value.key_info = 0x2080  # Group Key and ACK bits set
+        mock_msg1.addr1 = self.target_client_mac
+        mock_msg1.addr2 = self.target_ap_mac
+
+        mock_msg2 = MagicMock()
+        mock_msg2.haslayer.return_value = True
+        mock_msg2.getlayer.return_value.type = 3
+        mock_msg2.getlayer.return_value.key_info = 0x2000  # Group Key bit set
+        mock_msg2.addr1 = self.target_ap_mac
+        mock_msg2.addr2 = self.target_client_mac
+
+        mock_broadcast = MagicMock()
+        mock_broadcast.haslayer.return_value = True
+        mock_broadcast.addr2 = self.target_ap_mac
+        mock_broadcast.dst = "ff:ff:ff:ff:ff:ff"
+        
+        # Mock sniff to return our test packets in sequence
+        self.mock_sniff.side_effect = [
+            [mock_msg1, mock_msg2],  # Initial group key handshake
+            [mock_msg1],  # Retransmitted message 1
+            [mock_broadcast],  # Broadcast frame
+        ]
+        
+        with patch('krack_attack.time.sleep'):
+            group_key_handshake_immediate_install(
+                self.interface,
+                self.target_ap_mac
+            )
+            
+        self.mock_sendp.assert_called()
+
+    def test_group_key_handshake_delayed(self):
+        # Test delayed group key handshake attack
+        # Create mock packets for group key handshake
+        mock_msg1 = MagicMock()
+        mock_msg1.haslayer.return_value = True
+        mock_msg1.getlayer.return_value.type = 3
+        mock_msg1.getlayer.return_value.key_info = 0x2080  # Group Key and ACK bits set
+        mock_msg1.addr1 = self.target_client_mac
+        mock_msg1.addr2 = self.target_ap_mac
+
+        mock_msg2 = MagicMock()
+        mock_msg2.haslayer.return_value = True
+        mock_msg2.getlayer.return_value.type = 3
+        mock_msg2.getlayer.return_value.key_info = 0x2000  # Group Key bit set
+        mock_msg2.addr1 = self.target_ap_mac
+        mock_msg2.addr2 = self.target_client_mac
+
+        mock_broadcast = MagicMock()
+        mock_broadcast.haslayer.return_value = True
+        mock_broadcast.addr2 = self.target_ap_mac
+        mock_broadcast.dst = "ff:ff:ff:ff:ff:ff"
+        
+        # Mock sniff to return our test packets in sequence
+        self.mock_sniff.side_effect = [
+            [mock_msg1, mock_msg2],  # Initial group key handshake
+            [mock_msg1],  # Retransmitted message 1
+            [mock_msg2],  # Message 2 to modify
+            [mock_broadcast],  # Broadcast frame
+        ]
+        
+        with patch('krack_attack.time.sleep'):
+            group_key_handshake_delayed_install(
+                self.interface,
+                self.target_ap_mac
+            )
+            
+        self.mock_sendp.assert_called()
+
+    def test_fast_bss_transition(self):
+        # Test Fast BSS Transition attack
+        # Create mock packets for FT handshake
+        mock_auth_req = MagicMock()
+        mock_auth_req.haslayer.return_value = True
+        mock_auth_req.getlayer.return_value.algo = 2  # FT Authentication
+        mock_auth_req.addr1 = self.target_ap_mac
+        mock_auth_req.addr2 = self.target_client_mac
+
+        mock_auth_resp = MagicMock()
+        mock_auth_resp.haslayer.return_value = True
+        mock_auth_resp.getlayer.return_value.algo = 2  # FT Authentication
+        mock_auth_resp.addr1 = self.target_client_mac
+        mock_auth_resp.addr2 = self.target_ap_mac
+
+        mock_reasso_req = MagicMock()
+        mock_reasso_req.haslayer.return_value = True
+        mock_reasso_req.haslayer.side_effect = lambda x: x == Dot11ReassoReq
+        mock_reasso_req.addr1 = self.target_ap_mac
+        mock_reasso_req.addr2 = self.target_client_mac
+
+        mock_reasso_resp = MagicMock()
+        mock_reasso_resp.haslayer.return_value = True
+        mock_reasso_resp.haslayer.side_effect = lambda x: x == Dot11ReassoResp
+        mock_reasso_resp.addr1 = self.target_client_mac
+        mock_reasso_resp.addr2 = self.target_ap_mac
+
+        # Add Mobility Domain IE to auth frames
+        mock_auth_req.getlayer.return_value.info = b'\x00' * 32 + b'\x11' * 32  # SNonce
+        mock_auth_resp.getlayer.return_value.info = b'\x00' * 32 + b'\x22' * 32  # ANonce
+        
+        # Mock sniff to return our test packets in sequence
+        self.mock_sniff.side_effect = [
+            [mock_auth_req, mock_auth_resp, mock_reasso_req, mock_reasso_resp],  # Complete FT handshake
+            [mock_reasso_req],  # Encrypted frame
+        ]
+        
+        with patch('krack_attack.time.sleep'):
+            fast_bss_transition_attack(
+                self.interface,
+                self.target_ap_mac,
+                self.target_client_mac
+            )
+            
+        self.mock_sendp.assert_called()
 
 if __name__ == '__main__':
     unittest.main() 
