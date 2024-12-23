@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 from scapy.all import Dot11, EAPOL
+from scapy.layers.dot11 import Dot11Auth, Dot11AssoReq, Dot11ReassoReq, Dot11AssoResp, Dot11ReassoResp, Dot11Elt, RadioTap
 from krack_attack.krack_attacks import (
     four_way_handshake_plaintext_retransmission,
     four_way_handshake_encrypted_retransmission,

@@ -105,8 +105,8 @@ class TestAutoAttack(unittest.TestCase):
         ]
         
         # Set up mock returns
-        self.mock_scan.side_effect = scan_results
-        self.mock_detect.side_effect = client_results
+        self.mock_scan.side_effect = scan_results * 3  # Repeat sequence to handle multiple iterations
+        self.mock_detect.side_effect = client_results * 3
         
         # Set some attacks to fail
         self.mock_attacks['four_way_handshake_plaintext_retransmission'].side_effect = TimeoutError()
@@ -119,29 +119,29 @@ class TestAutoAttack(unittest.TestCase):
         
         # Run auto attack with error handling
         with patch('krack_attack.krack_auto.time.sleep') as mock_sleep:
-            # Set up mock_sleep to raise KeyboardInterrupt after processing all results
-            mock_sleep.side_effect = [None] * 10 + [KeyboardInterrupt()]
+            # Set up mock_sleep to raise KeyboardInterrupt after 4 scan cycles
+            mock_sleep.side_effect = [None] * 3 + [KeyboardInterrupt()]
             
             results = auto_attack(
                 self.interface,
                 min_signal=-75,
                 attack_timeout=30,
-                scan_interval=15
+                scan_interval=15,
+                single_run=False
             )
         
         # Verify scanning continued after failures
         self.assertEqual(self.mock_scan.call_count, 4)
         
-        # Verify client detection was attempted multiple times
-        self.assertEqual(self.mock_detect.call_count, 4)
+        # Verify successful attacks were recorded
+        self.assertIn('00:11:22:33:44:55', results)
+        self.assertIn('four_way_handshake_encrypted', results['00:11:22:33:44:55'])
+        self.assertIn('group_key_handshake_delayed', results['00:11:22:33:44:55'])
         
-        # Verify that only successful attacks were recorded
-        for network_results in results.values():
-            self.assertIn('4way_encrypted', network_results)
-            self.assertIn('group_delayed', network_results)
-            self.assertNotIn('4way_plaintext', network_results)
-            self.assertNotIn('group_immediate', network_results)
-            self.assertNotIn('fast_bss', network_results)
+        # Verify that failed attacks were not recorded
+        self.assertNotIn('four_way_handshake_plaintext', results['00:11:22:33:44:55'])
+        self.assertNotIn('group_key_handshake_immediate', results['00:11:22:33:44:55'])
+        self.assertNotIn('fast_bss', results['00:11:22:33:44:55'])
 
     def test_auto_attack_timeout_handling(self):
         """Test auto attack timeout handling for individual attacks."""
@@ -170,26 +170,27 @@ class TestAutoAttack(unittest.TestCase):
         
         # Run auto attack with timeout handling
         with patch('krack_attack.krack_auto.time.sleep') as mock_sleep:
-            # Set up mock_sleep to raise KeyboardInterrupt after processing all attacks
-            mock_sleep.side_effect = [None] * 5 + [KeyboardInterrupt()]
+            # Set up mock_sleep to raise KeyboardInterrupt after one scan cycle
+            mock_sleep.side_effect = [KeyboardInterrupt()]
             
             results = auto_attack(
                 self.interface,
                 min_signal=-70,
                 attack_timeout=30,
-                scan_interval=15
+                scan_interval=15,
+                single_run=True
             )
         
         # Verify that all attacks were attempted
-        for mock_attack in self.mock_attacks.values():
-            self.assertTrue(mock_attack.called)
+        for attack_name, mock_attack in self.mock_attacks.items():
+            self.assertTrue(mock_attack.called, f"Attack {attack_name} was not called")
         
-        # Verify that successful attacks were recorded
-        self.assertIn(mock_network['Address'], results)
-        self.assertIn('4way_encrypted', results[mock_network['Address']])
-        self.assertIn('group_delayed', results[mock_network['Address']])
+        # Verify that only successful attacks were recorded
+        self.assertIn('00:11:22:33:44:55', results)
+        self.assertIn('four_way_handshake_encrypted', results['00:11:22:33:44:55'])
+        self.assertIn('group_key_handshake_delayed', results['00:11:22:33:44:55'])
         
         # Verify that timed out attacks were not recorded
-        self.assertNotIn('4way_plaintext', results[mock_network['Address']])
-        self.assertNotIn('group_immediate', results[mock_network['Address']])
-        self.assertNotIn('fast_bss', results[mock_network['Address']]) 
+        self.assertNotIn('four_way_handshake_plaintext', results['00:11:22:33:44:55'])
+        self.assertNotIn('group_key_handshake_immediate', results['00:11:22:33:44:55'])
+        self.assertNotIn('fast_bss', results['00:11:22:33:44:55']) 

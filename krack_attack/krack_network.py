@@ -112,65 +112,70 @@ def scan_networks(interface):
     else:  # Linux and other systems
         return scan_networks_linux(interface)
 
-def detect_clients(interface, ap_mac, timeout=30):
+def detect_clients(interface, target_ap_mac, timeout=30):
     """
     Detect clients connected to a specific access point.
     
     Args:
         interface (str): Network interface to use
-        ap_mac (str): MAC address of the access point
-        timeout (int): How long to scan for clients (in seconds)
-    
+        target_ap_mac (str): MAC address of the target AP
+        timeout (int): Time to sniff for clients in seconds
+        
     Returns:
         list: List of client MAC addresses
     """
-    logger.info(f"Detecting clients for AP {ap_mac}...")
+    logger.info(f"Detecting clients for AP {target_ap_mac}...")
     
-    clients = set()
-    start_time = time.time()
+    def is_valid_client_mac(mac):
+        """Check if MAC address is valid (not broadcast/multicast)."""
+        # Convert MAC to bytes for comparison
+        mac_bytes = bytes.fromhex(mac.replace(':', ''))
+        # Check if it's a broadcast address
+        if mac_bytes == b'\xff\xff\xff\xff\xff\xff':
+            return False
+        # Check if it's a multicast address (first byte LSB is 1)
+        if mac_bytes[0] & 0x01:
+            return False
+        # Check if it's all zeros
+        if mac_bytes == b'\x00\x00\x00\x00\x00\x00':
+            return False
+        return True
     
     def packet_filter(pkt):
-        """Filter packets to find client addresses."""
+        """Filter packets for client detection."""
         if not pkt.haslayer(Dot11):
             return False
             
-        # Verify addresses exist and are valid
-        if not hasattr(pkt, 'addr1') or not hasattr(pkt, 'addr2'):
-            return False
-            
         # Check if packet is to/from our target AP
-        if pkt.addr1 != ap_mac and pkt.addr2 != ap_mac:
+        if pkt.addr1 != target_ap_mac and pkt.addr2 != target_ap_mac:
             return False
             
-        # Exclude broadcast/multicast addresses
-        client_addr = pkt.addr2 if pkt.addr1 == ap_mac else pkt.addr1
-        if (not client_addr or 
-            client_addr == "ff:ff:ff:ff:ff:ff" or 
-            client_addr.startswith("01:00:5e") or 
-            client_addr.startswith("33:33")):
+        # Get the client address (the other end of the communication)
+        client_addr = pkt.addr2 if pkt.addr1 == target_ap_mac else pkt.addr1
+        
+        # Validate client address
+        if not is_valid_client_mac(client_addr):
             return False
             
         return True
     
     try:
-        # Sniff for packets
-        packets = sniff(
-            iface=interface,
-            timeout=timeout,
-            lfilter=packet_filter
-        )
+        # Sniff for client packets
+        packets = sniff(iface=interface, lfilter=packet_filter, timeout=timeout)
         
         # Extract unique client addresses
+        clients = set()
         for pkt in packets:
-            client_addr = pkt.addr2 if pkt.addr1 == ap_mac else pkt.addr1
-            if client_addr not in clients:
+            client_addr = pkt.addr2 if pkt.addr1 == target_ap_mac else pkt.addr1
+            if is_valid_client_mac(client_addr):
                 clients.add(client_addr)
                 logger.info(f"Found client: {client_addr}")
-    
+        
+        return list(clients)
+        
     except Exception as e:
-        logger.error(f"Error during client detection: {str(e)}")
-    
-    return list(clients)
+        logger.error(f"Error detecting clients: {str(e)}")
+        return []
 
 def sort_networks_by_strength(networks):
     """Sort networks by signal strength, strongest first."""
