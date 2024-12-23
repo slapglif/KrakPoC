@@ -288,6 +288,7 @@ class TestKrackAttack(unittest.TestCase):
         )
         mock_reasso_req.addr1 = self.target_ap_mac
         mock_reasso_req.addr2 = self.target_client_mac
+        mock_reasso_req.copy.return_value = mock_reasso_req  # Return self on copy
 
         mock_reasso_resp = MagicMock()
         mock_reasso_resp.haslayer.side_effect = lambda x: x in [Dot11, Dot11ReassoResp, Dot11Elt]
