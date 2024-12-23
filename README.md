@@ -1,5 +1,8 @@
 # KRACK Attack Tool 🔓
 
+![ezgif-1-4a9174721e](https://github.com/user-attachments/assets/09dbcbd8-88f7-4742-b7ea-c630e4625fed)
+
+
 A Python-based tool for testing networks against Key Reinstallation Attacks (KRACK).
 
 ## 📁 Project Structure
@@ -80,6 +83,10 @@ Options:
 ```bash
 krack-attack manual --interface wlan0 --bssid XX:XX:XX:XX:XX:XX --client YY:YY:YY:YY:YY:YY
 ```
+### Tests
+
+All tests passing
+![image](https://github.com/user-attachments/assets/cf26f807-50de-4582-8f93-6701b0a15a56)
 
 ## 🛡️ Defense
 
