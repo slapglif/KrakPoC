@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
-from krack_auto import auto_attack
+from krack_attack.krack_auto import auto_attack
+from krack_attack.krack_core import TimeoutError
 
 class TestAutoAttack(unittest.TestCase):
     def setUp(self):
@@ -9,16 +10,16 @@ class TestAutoAttack(unittest.TestCase):
         self.target_client_mac = "AA:BB:CC:DD:EE:FF"
         
         # Create mock for network functions
-        self.mock_scan = patch('krack_auto.scan_networks').start()
-        self.mock_detect = patch('krack_auto.detect_clients').start()
+        self.mock_scan = patch('krack_attack.krack_auto.scan_networks').start()
+        self.mock_detect = patch('krack_attack.krack_auto.detect_clients').start()
         
         # Create mock for attack functions
         self.mock_attacks = {
-            'four_way_handshake_plaintext_retransmission': patch('krack_auto.four_way_handshake_plaintext_retransmission').start(),
-            'four_way_handshake_encrypted_retransmission': patch('krack_auto.four_way_handshake_encrypted_retransmission').start(),
-            'group_key_handshake_immediate_install': patch('krack_auto.group_key_handshake_immediate_install').start(),
-            'group_key_handshake_delayed_install': patch('krack_auto.group_key_handshake_delayed_install').start(),
-            'fast_bss_transition_attack': patch('krack_auto.fast_bss_transition_attack').start()
+            'four_way_handshake_plaintext_retransmission': patch('krack_attack.krack_auto.four_way_handshake_plaintext_retransmission').start(),
+            'four_way_handshake_encrypted_retransmission': patch('krack_attack.krack_auto.four_way_handshake_encrypted_retransmission').start(),
+            'group_key_handshake_immediate_install': patch('krack_attack.krack_auto.group_key_handshake_immediate_install').start(),
+            'group_key_handshake_delayed_install': patch('krack_attack.krack_auto.group_key_handshake_delayed_install').start(),
+            'fast_bss_transition_attack': patch('krack_attack.krack_auto.fast_bss_transition_attack').start()
         }
         
     def tearDown(self):
@@ -117,7 +118,7 @@ class TestAutoAttack(unittest.TestCase):
         self.mock_attacks['group_key_handshake_delayed_install'].return_value = True
         
         # Run auto attack with error handling
-        with patch('krack_auto.time.sleep') as mock_sleep:
+        with patch('krack_attack.krack_auto.time.sleep') as mock_sleep:
             # Set up mock_sleep to raise KeyboardInterrupt after processing all results
             mock_sleep.side_effect = [None] * 10 + [KeyboardInterrupt()]
             
@@ -168,7 +169,7 @@ class TestAutoAttack(unittest.TestCase):
         self.mock_attacks['group_key_handshake_delayed_install'].return_value = True
         
         # Run auto attack with timeout handling
-        with patch('krack_auto.time.sleep') as mock_sleep:
+        with patch('krack_attack.krack_auto.time.sleep') as mock_sleep:
             # Set up mock_sleep to raise KeyboardInterrupt after processing all attacks
             mock_sleep.side_effect = [None] * 5 + [KeyboardInterrupt()]
             

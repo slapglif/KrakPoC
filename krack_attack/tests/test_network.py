@@ -1,9 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch, ANY
 from scapy.all import Dot11
-from krack_attack.krack_network import detect_clients, scan_networks
+from krack_attack.krack_network import detect_clients, scan_networks, sort_networks_by_strength
 from krack_attack.krack_core import parse_signal_strength
-from krack_attack.krack_network import sort_networks_by_strength
 
 class TestNetwork(unittest.TestCase):
     def setUp(self):

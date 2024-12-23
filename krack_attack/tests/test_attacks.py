@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 from scapy.all import Dot11, EAPOL
-from krack_attacks import (
+from krack_attack.krack_attacks import (
     four_way_handshake_plaintext_retransmission,
     four_way_handshake_encrypted_retransmission,
     group_key_handshake_immediate_install,
@@ -18,8 +18,8 @@ class TestAttacks(unittest.TestCase):
         self.target_client_mac = "AA:BB:CC:DD:EE:FF"
         
         # Create mock for scapy functions
-        self.mock_sniff = patch('krack_attacks.sniff').start()
-        self.mock_sendp = patch('krack_attacks.send_packet').start()
+        self.mock_sniff = patch('krack_attack.krack_attacks.sniff').start()
+        self.mock_sendp = patch('krack_attack.krack_attacks.send_packet').start()
         
     def tearDown(self):
         patch.stopall()
@@ -119,7 +119,7 @@ class TestAttacks(unittest.TestCase):
             [mock_msg3],  # Retransmitted message 3
         ]
         
-        with patch('krack_attacks.time.sleep'):
+        with patch('krack_attack.krack_attacks.time.sleep'):
             result = four_way_handshake_plaintext_retransmission(
                 self.interface,
                 self.target_ap_mac,
@@ -168,7 +168,7 @@ class TestAttacks(unittest.TestCase):
             [mock_msg3],  # Encrypted retransmitted message 3
         ]
         
-        with patch('krack_attacks.time.sleep'):
+        with patch('krack_attack.krack_attacks.time.sleep'):
             result = four_way_handshake_encrypted_retransmission(
                 self.interface,
                 self.target_ap_mac,
@@ -211,7 +211,7 @@ class TestAttacks(unittest.TestCase):
             [mock_broadcast],  # Broadcast frame
         ]
         
-        with patch('krack_attacks.time.sleep'):
+        with patch('krack_attack.krack_attacks.time.sleep'):
             result = group_key_handshake_immediate_install(
                 self.interface,
                 self.target_ap_mac
@@ -254,7 +254,7 @@ class TestAttacks(unittest.TestCase):
             [mock_broadcast],  # Broadcast frame
         ]
         
-        with patch('krack_attacks.time.sleep'):
+        with patch('krack_attack.krack_attacks.time.sleep'):
             result = group_key_handshake_delayed_install(
                 self.interface,
                 self.target_ap_mac
@@ -312,7 +312,7 @@ class TestAttacks(unittest.TestCase):
             [mock_reasso_req],  # Encrypted frame
         ]
         
-        with patch('krack_attacks.time.sleep'):
+        with patch('krack_attack.krack_attacks.time.sleep'):
             result = fast_bss_transition_attack(
                 self.interface,
                 self.target_ap_mac,
