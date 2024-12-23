@@ -1,0 +1,4 @@
+scapy>=2.4.5
+rich>=10.0.0
+click>=8.0.0
+loguru>=0.6.0

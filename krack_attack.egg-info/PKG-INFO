@@ -1,3 +1,26 @@
+Metadata-Version: 2.1
+Name: krack-attack
+Version: 0.1.0
+Summary: KRACK (Key Reinstallation Attack) Tool
+Home-page: https://github.com/yourusername/krack-attack
+Author: Your Name
+Author-email: your.email@example.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Information Technology
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Topic :: Security
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Requires-Dist: scapy>=2.4.5
+Requires-Dist: rich>=10.0.0
+Requires-Dist: click>=8.0.0
+Requires-Dist: loguru>=0.6.0
+
 # KRACK Attack Tool
 
 ![ezgif-1-4a9174721e](https://github.com/user-attachments/assets/bce56522-7a00-49be-926d-a4c9fb6cb3f1)

