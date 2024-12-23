@@ -1,5 +1,7 @@
 # KRACK Attack Tool
 
+![ezgif-1-4a9174721e](https://github.com/user-attachments/assets/bce56522-7a00-49be-926d-a4c9fb6cb3f1)
+
 An implementation of the Key Reinstallation Attack (KRACK) against WPA2 as described in the paper "Key Reinstallation Attacks: Forcing Nonce Reuse in WPA2" by Mathy Vanhoef and Frank Piessens.
 
 ## Features
